@@ -1,0 +1,15 @@
+# Output directory with personal information
+output/
+
+# Virtual environment
+venv/
+env/
+.env
+
+# Personal configuration
+config/personal.json
+
+# OS files
+.DS_Store
+__pycache__/
+*.pyc

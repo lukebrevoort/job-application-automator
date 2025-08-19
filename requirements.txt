@@ -1,0 +1,36 @@
+# Web scraping and HTTP requests
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+selenium==4.15.2
+urllib3==2.0.7
+
+# Text processing and NLP
+nltk==3.8.1
+textstat==0.7.3
+python-dateutil==2.8.2
+
+# LLM Integration
+ollama==0.1.7
+
+# Notion API
+notion-client==2.2.1
+
+# Configuration and utilities
+python-dotenv==1.0.0
+pydantic==2.5.0
+click==8.1.7
+colorama==0.4.6
+rich==13.7.0
+
+# LaTeX processing - use git version for Python 3.12 compatibility
+git+https://github.com/JelteF/PyLaTeX.git
+
+# Data handling
+pandas==2.1.4
+json5==0.9.14
+
+# Development and testing
+pytest==7.4.3
+black==23.11.0
+flake8==6.1.0

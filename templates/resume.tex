@@ -1,0 +1,187 @@
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{fontawesome5}
+\usepackage[T1]{fontenc}
+\input{glyphtounicode}
+
+% Font options - Georgia
+\usepackage{mathptmx} % Times font (closest to Georgia in LaTeX)
+\renewcommand{\rmdefault}{ppl} % Palatino (alternative serif option)
+\usepackage{tgpagella} % TeX Gyre Pagella (Georgia-like font)
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{document}
+
+%----------HEADING----------
+\begin{center}
+    \textbf{\scshape Luke Brevoort} \\ \vspace{1pt}
+    \small Littleton, CO $|$\ 720-862-5457 $|$ \href{mailto:luke@brevoort.com}{\underline{luke@brevoort.com}} $|$ 
+    \href{https://luke.brevoort.com}{\underline{luke.brevoort.com}}
+\end{center}
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {Stevens Institute of Technology}{Hoboken, NJ}
+      {Bachelor of Science in Computer Science, Machine Learning Concentration}{Expected: May 2027}
+      \resumeItemListStart
+        \resumeItem{GPA: 3.96}
+        \resumeItem{Awards: Edwin A. Stevens Scholarship, Dean's List}
+        \resumeItem{Coursework: Data Structures and Algorithms, Discrete Structures, Computer Architecture, Certified Ethical Hacking, Fundamentals of Linux and Unix, Linear Algebra, HuggingFace Agentic AI}
+      \resumeItemListEnd
+  \resumeSubHeadingListEnd
+
+%-----------EXPERIENCE-----------
+\section{Work Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Research Intern}{December 2024 -- Present}
+      {Natural Language Processing Lab at Stevens}{Hoboken, NJ}
+      \resumeItemListStart
+        \resumeItem{Engineered large language model capabilities for interpreting complex multilingual text, including training on diverse international news datasets, techniques for preserving cultural context in translations, and integrating models into a news aggregation platform}
+        \resumeItem{Designing with Node.js, MongoDB Backend, Next.js Framework, and DeepSeek R1 Model}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------
+\section{Projects}
+    \resumeSubHeadingListStart
+      \resumeProjectHeading
+          {\textbf{Student Productivity Agent}}{February 2025 -- Present}
+          \resumeItemListStart
+            \resumeItem{Designing an agentic system called FlowState using LangGraph that orchestrates specialized AI agents for course material analysis, project management, and study scheduling to optimize student learning}
+            \resumeItem{Implemented using Canvas, Notion, and Calendar API connections for a complete student productivity solution}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Assignment Tracker}}{January 2025 -- February 2025}
+          \resumeItemListStart
+            \resumeItem{Fabricated a modern assignment tool that monitors Canvas for new assignments and updates a Notion database in real-time using Canvas RESTful API, Notion API, Python, and launchctl}
+          \resumeItemListEnd
+      \resumeProjectHeading
+          {\textbf{Personal Website}}{September 2024 -- December 2024}
+          \resumeItemListStart
+            \resumeItem{Engineered a responsive portfolio featuring on-device Llama 3.3 AI integration via WebLLM, built with React/Next.js and optimized for \textbf{95\%+ Lighthouse performance score}}
+            \resumeItem{Automated blog content pipeline using GitHub Actions and Notion API, using a serverless solution to \textbf{reduce operating costs by 85\%}}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+%-----------LEADERSHIP EXPERIENCE-----------
+\section{Leadership Experience}
+  \resumeSubHeadingListStart
+
+    \resumeSubheading
+      {Assistant Vice President of Finance}{September 2024 -- Present}
+      {Stevens Student Government Association}{Hoboken, NJ}
+      \resumeItemListStart
+        \resumeItem{Managed strategic collaboration with 150+ campus club leaders, facilitating the allocation of \textbf{\$2.2 million} in organizational funding to support diverse student events and activities}
+      \resumeItemListEnd
+    \resumeSubheading  
+      {Student Body President and NHS Vice President}{August 2023 -- May 2024}
+      {High School Student Government}{Littleton, CO}
+      \resumeItemListStart
+        \resumeItem{Fund-raised over \textbf{\$30,000 for the Make-A-Wish Foundation} and led all school events including Pep Rally, Homecoming, Prom, Nerds Night Out, and other extracurricular activities at Stem School Highlands Ranch}
+      \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------PROGRAMMING SKILLS-----------
+\section{Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     \textbf{Languages}{: Python, Go, JavaScript (React, Next.js), HTML/CSS (Tailwind), SQL, TypeScript} \\
+     \textbf{Tools \& Frameworks}{: Git, WebLLM, AWS, Node.js, Neural Networks, Kaggle, Vercel, Google Cloud API, PostgreSQL, MySQL, LangGraph} \\
+    }}
+ \end{itemize}
+
+%-----------EXTRACURRICULAR ACTIVITIES-----------
+\section{Extracurricular Activities}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     Ultimate Frisbee Club Team Member, Stevens Powerlifting, IEEE Member
+    }}
+ \end{itemize}
+
+%-------------------------------------------
+\end{document}
