@@ -422,13 +422,15 @@ class OllamaIntegration:
 
     def personalize_resume(self, 
                           base_latex_resume: str, 
-                          job_posting: JobPosting) -> ResumePersonalization:
+                          job_posting: JobPosting,
+                          additional_context: str = None) -> ResumePersonalization:
         """
         Personalize a LaTeX resume for a specific job posting.
         
         Args:
             base_latex_resume: The base LaTeX resume content
             job_posting: The job posting to personalize for
+            additional_context: Optional additional context to emphasize
             
         Returns:
             ResumePersonalization object with the results
@@ -448,8 +450,20 @@ class OllamaIntegration:
         6. Do NOT change personal information, contact details, or education dates
         7. Focus on making existing content more relevant and impactful
         8. Use action verbs and quantified achievements where possible
+        9. If additional context is provided, use it to highlight specific achievements or technologies
         
         Return ONLY the modified LaTeX code, nothing else.
+        """
+        
+        additional_context_instruction = ""
+        if additional_context:
+            additional_context_instruction = f"""
+        
+        IMPORTANT ADDITIONAL CONTEXT:
+        The candidate has specifically highlighted the following information that should be emphasized where relevant:
+        {additional_context}
+        
+        Please ensure this information is prominently featured in the personalized resume where it relates to the job requirements.
         """
         
         prompt = f"""
@@ -464,7 +478,7 @@ class OllamaIntegration:
         
         Key Skills Required: {', '.join(job_posting.skills[:10])}
         Key Requirements: {'; '.join(job_posting.requirements[:8])}
-        
+        {additional_context_instruction}
         Base LaTeX Resume:
         {base_latex_resume}
         
@@ -502,7 +516,8 @@ class OllamaIntegration:
     def generate_cover_letter(self, 
                             job_posting: JobPosting, 
                             resume_content: str = None,
-                            personal_info: Dict[str, str] = None) -> CoverLetterResult:
+                            personal_info: Dict[str, str] = None,
+                            additional_context: str = None) -> CoverLetterResult:
         """
         Generate a personalized cover letter for a job posting.
         
@@ -510,6 +525,7 @@ class OllamaIntegration:
             job_posting: The job posting to write for
             resume_content: Optional resume content for context
             personal_info: Optional personal information dict
+            additional_context: Optional additional context to emphasize
             
         Returns:
             CoverLetterResult object with the generated content
@@ -526,6 +542,7 @@ class OllamaIntegration:
         3. If the resume doesn't have direct experience for something, focus on transferable skills
         4. Use exact details from the resume (GPA, company names, project names, technologies)
         5. Do not exaggerate or embellish achievements beyond what's stated in the resume
+        6. If additional context is provided, use it to highlight specific achievements or projects
         
         Guidelines:
         1. Use a professional, engaging tone
@@ -549,6 +566,18 @@ class OllamaIntegration:
         if job_posting.location:
             context_info += f"Location: {job_posting.location}\\n"
         
+        # Add additional context if provided
+        additional_context_section = ""
+        if additional_context:
+            additional_context_section = f"""
+        
+        IMPORTANT ADDITIONAL CONTEXT:
+        The candidate has specifically highlighted the following information that should be emphasized:
+        {additional_context}
+        
+        Please ensure this information is prominently featured in the cover letter where it relates to the job requirements.
+        """
+        
         prompt = f"""
         Write a compelling cover letter for this job posting using ONLY the candidate's real experience from their resume.
         
@@ -566,7 +595,7 @@ class OllamaIntegration:
         
         PERSONAL INFORMATION:
         {str(personal_info) if personal_info else "No additional personal info"}
-        
+        {additional_context_section}
         INSTRUCTIONS:
         Write a professional cover letter that:
         1. Opens with enthusiasm for the specific role and company

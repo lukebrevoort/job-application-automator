@@ -165,7 +165,8 @@ class CoverLetterGenerator:
     def generate_personalized_cover_letter(self, 
                                          job_posting: JobPosting,
                                          personal_info: Dict[str, str] = None,
-                                         output_path: str = None) -> CoverLetterPersonalization:
+                                         output_path: str = None,
+                                         additional_context: str = None) -> CoverLetterPersonalization:
         """
         Generate a fully personalized cover letter for a job posting.
         
@@ -173,6 +174,7 @@ class CoverLetterGenerator:
             job_posting: The job posting to personalize for
             personal_info: Optional dictionary of personal info (name, email, etc.)
             output_path: Optional path to save the generated cover letter
+            additional_context: Optional additional context to emphasize
             
         Returns:
             CoverLetterPersonalization object with the results
@@ -187,7 +189,8 @@ class CoverLetterGenerator:
         cover_letter_result = self.ollama.generate_cover_letter(
             job_posting=job_posting,
             resume_content=readable_resume,
-            personal_info=personal_info
+            personal_info=personal_info,
+            additional_context=additional_context
         )
         
         # Populate the template with the generated content

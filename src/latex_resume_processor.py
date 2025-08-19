@@ -397,7 +397,8 @@ class LaTeXResumeProcessor:
     def personalize_resume(self, 
                           job_posting: JobPosting,
                           output_path: str = None,
-                          strategy: PersonalizationStrategy = None) -> ResumePersonalization:
+                          strategy: PersonalizationStrategy = None,
+                          additional_context: str = None) -> ResumePersonalization:
         """
         Create a personalized version of the resume for a specific job posting.
         
@@ -405,6 +406,7 @@ class LaTeXResumeProcessor:
             job_posting: The job posting to personalize for
             output_path: Optional path to save the personalized resume
             strategy: Optional custom personalization strategy
+            additional_context: Optional additional context to provide to the LLM
             
         Returns:
             ResumePersonalization object with results
@@ -419,7 +421,11 @@ class LaTeXResumeProcessor:
             strategy = self.create_personalization_strategy(job_posting, analysis)
         
         # Use Ollama to generate personalized content
-        personalization = self.ollama.personalize_resume(self.base_resume_content, job_posting)
+        personalization = self.ollama.personalize_resume(
+            self.base_resume_content, 
+            job_posting,
+            additional_context=additional_context
+        )
         
         # Apply additional processing based on strategy
         enhanced_latex = self._apply_personalization_strategy(

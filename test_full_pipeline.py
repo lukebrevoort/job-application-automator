@@ -43,11 +43,18 @@ def print_job_info(job: JobPosting):
     print(f"📄 Description Length: {len(job.description)} characters")
 
 
-def save_summary_report(job_posting, resume_result, cover_letter_result, fit_score, output_dir):
+def save_summary_report(job_posting, resume_result, cover_letter_result, fit_score, output_dir, additional_context=None):
     """Save a summary report of the entire process."""
     report_path = os.path.join(output_dir, "application_summary.md")
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    additional_context_section = ""
+    if additional_context:
+        additional_context_section = f"""
+## Additional Context Provided
+{additional_context}
+"""
     
     report_content = f"""# Job Application Summary Report
 
@@ -58,7 +65,7 @@ def save_summary_report(job_posting, resume_result, cover_letter_result, fit_sco
 - **URL:** {job_posting.url}
 - **Location:** {job_posting.location}
 - **Skills Required:** {', '.join(job_posting.skills)}
-
+{additional_context_section}
 ## Generated Outputs
 - **Resume:** `personalized_resume.tex`
 - **Cover Letter:** `personalized_cover_letter.md`
@@ -122,6 +129,23 @@ def main():
     
     job_url = input("\n🌐 Enter job posting URL: ").strip()
     
+    # Prompt for additional context information
+    print("\n💡 Additional Context Information:")
+    print("Please provide any important information that might be useful for the LLM to know")
+    print("when personalizing your resume and cover letter. This could include:")
+    print("- Specific projects or achievements you want highlighted")
+    print("- Technologies or tools you want emphasized")
+    print("- Unique aspects of your background relevant to this role")
+    print("- Company-specific knowledge or connections")
+    print("- Portfolio highlights or special accomplishments")
+    print("\nExamples:")
+    print('- "The student productivity agent frontend was built entirely in Figma first"')
+    print('- "Led the migration from React to Vue.js, reducing bundle size by 40%"')
+    print('- "Published research paper on neural networks at ICML 2024"')
+    print("- Leave blank to skip this section")
+    
+    additional_context = input("\n📝 Enter additional context (or press Enter to skip): ").strip()
+    
     if not job_url:
         # Use the sample job for testing
         job_url = sample_job.url
@@ -178,9 +202,13 @@ def main():
         
         # Generate personalized resume
         print(f"✏️  Personalizing resume for {job_posting.title}...")
+        if additional_context:
+            print(f"💡 Using additional context: {additional_context[:100]}{'...' if len(additional_context) > 100 else ''}")
+        
         resume_result = resume_processor.personalize_resume(
             job_posting=job_posting,
-            output_path=os.path.join(output_dir, "personalized_resume.tex")
+            output_path=os.path.join(output_dir, "personalized_resume.tex"),
+            additional_context=additional_context if additional_context else None
         )
         
         print("✅ Resume personalization complete!")
@@ -205,10 +233,14 @@ def main():
         
         # Generate personalized cover letter
         print(f"✏️  Generating cover letter for {job_posting.company}...")
+        if additional_context:
+            print(f"💡 Including additional context in cover letter generation...")
+        
         cover_letter_result = cover_letter_generator.generate_personalized_cover_letter(
             job_posting=job_posting,
             personal_info=personal_info,
-            output_path=os.path.join(output_dir, "personalized_cover_letter.md")
+            output_path=os.path.join(output_dir, "personalized_cover_letter.md"),
+            additional_context=additional_context if additional_context else None
         )
         
         print("✅ Cover letter generation complete!")
@@ -241,7 +273,7 @@ def main():
         print_separator("📊 STEP 5: GENERATING SUMMARY")
         
         # Save comprehensive summary report
-        save_summary_report(job_posting, resume_result, cover_letter_result, fit_score, output_dir)
+        save_summary_report(job_posting, resume_result, cover_letter_result, fit_score, output_dir, additional_context)
         
         print_separator("🎉 PIPELINE TEST COMPLETED SUCCESSFULLY!")
         
