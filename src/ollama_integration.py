@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import ollama
-from job_scraper import JobPosting
+from job_scraper import JobPosting, RawJobContent
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -28,10 +28,11 @@ logger = logging.getLogger(__name__)
 # Want to use gpt-oss to experiment and use the model!
 class ModelType(Enum):
     """Enum for different model types optimized for different tasks."""
-    GENERAL = "gpt-oss:20b"           # Good general-purpose model
-    CODE = "codellama"           # Better for technical content
-    WRITING = "gpt-oss:20b"           # Good for writing tasks
-    ANALYSIS = "gpt-oss:20b"          # Good for analysis tasks
+    PARSING = "llama3.2:3b"          # Fast, small model for parsing tasks
+    GENERAL = "gpt-oss:20b"          # Good general-purpose model
+    CODE = "codellama"               # Better for technical content
+    WRITING = "gpt-oss:20b"          # Good for writing tasks
+    ANALYSIS = "gpt-oss:20b"         # Good for analysis tasks
 
 
 @dataclass
@@ -87,17 +88,20 @@ class OllamaIntegration:
     
     def __init__(self, 
                  default_model: str = "gpt-oss:20b",
+                 parsing_model: str = "llama3.2:3b",
                  timeout: int = 120,
                  max_retries: int = 3):
         """
         Initialize the Ollama integration.
         
         Args:
-            default_model: Default model to use for operations
+            default_model: Default model to use for content generation operations
+            parsing_model: Smaller, faster model to use for parsing operations
             timeout: Timeout for LLM requests in seconds
             max_retries: Maximum number of retry attempts
         """
         self.default_model = default_model
+        self.parsing_model = parsing_model
         self.timeout = timeout
         self.max_retries = max_retries
         self.client = ollama.Client()
@@ -207,6 +211,215 @@ class OllamaIntegration:
                     )
                 time.sleep(2 ** attempt)  # Exponential backoff
     
+    def parse_job_content(self, raw_content: RawJobContent) -> JobPosting:
+        """
+        Parse job posting details from raw HTML content using LLM.
+        
+        This method takes raw scraped content and extracts structured job information
+        including title, company, location, skills, requirements, etc.
+        
+        Args:
+            raw_content: RawJobContent object from the job scraper
+            
+        Returns:
+            JobPosting object with parsed job details
+        """
+        logger.info(f"Parsing job content from {raw_content.domain}")
+        
+        if not raw_content.success:
+            return JobPosting(
+                url=raw_content.url,
+                title=f"Scraping Error: {raw_content.error_message}",
+                raw_content=raw_content
+            )
+        
+        system_prompt = """
+        You are an expert at extracting structured job information from web page content.
+        Your task is to parse job posting content and extract key details accurately.
+        
+        CRITICAL RULES:
+        1. Extract information ONLY from the provided content
+        2. Do NOT invent or hallucinate any details
+        3. If information is not clearly present, leave it empty
+        4. Be precise and conservative in your extraction
+        5. Focus on the main job posting content, ignore navigation/ads
+        
+        Extract the following information:
+        - Job Title: The exact position title
+        - Company: The hiring company name
+        - Location: Work location (city, state, remote, etc.)
+        - Job Type: Full-time, Part-time, Contract, Internship, etc.
+        - Experience Level: Entry, Mid, Senior, Executive, etc.
+        - Salary Range: If mentioned (format as found)
+        - Description: Main job description (clean, 2-3 paragraphs max)
+        - Requirements: List of key requirements/qualifications
+        - Skills: Technical skills, tools, technologies mentioned
+        - Posted Date: If available
+        
+        Return your response as valid JSON in this exact format:
+        {{
+            "title": "Job Title Here",
+            "company": "Company Name",
+            "location": "Location",
+            "job_type": "Employment Type",
+            "experience_level": "Experience Level",
+            "salary_range": "Salary if mentioned",
+            "description": "Clean job description",
+            "requirements": ["requirement1", "requirement2", "requirement3"],
+            "skills": ["skill1", "skill2", "skill3"],
+            "posted_date": "Date if available"
+        }}
+        
+        Be thorough but concise. Focus on accuracy over completeness.
+        """
+        
+        # Prepare the content for parsing
+        content_to_parse = f"""
+        URL: {raw_content.url}
+        Domain: {raw_content.domain}
+        Page Title: {raw_content.page_title}
+        
+        PAGE CONTENT:
+        {raw_content.cleaned_text[:8000]}  # Limit to 8k chars to avoid token limits
+        """
+        
+        prompt = f"""
+        Please extract structured job information from this web page content.
+        Focus on the main job posting details and ignore navigation, ads, or unrelated content.
+        
+        {content_to_parse}
+        
+        Extract the job details and return them in the specified JSON format.
+        Be conservative - only include information that is clearly present in the content.
+        """
+        
+        # Use the smaller parsing model for this task
+        parsing_model = self.parsing_model
+        logger.info(f"Using parsing model: {parsing_model}")
+        
+        if not self.ensure_model(parsing_model):
+            logger.warning(f"Parsing model {parsing_model} not available, falling back to default model")
+            parsing_model = self.default_model
+            if not self.ensure_model(parsing_model):
+                raise RuntimeError(f"No suitable model available for parsing")
+        
+        response = self._generate_with_retry(
+            model=parsing_model,
+            prompt=prompt,
+            system_prompt=system_prompt
+        )
+        
+        if not response.success:
+            logger.error(f"Failed to parse job content: {response.error_message}")
+            return JobPosting(
+                url=raw_content.url,
+                title="LLM Parsing Error",
+                description=f"Failed to parse content: {response.error_message}",
+                raw_content=raw_content
+            )
+        
+        # Parse the JSON response
+        try:
+            # Clean the response to extract JSON
+            json_content = response.content.strip()
+            
+            # Try to find JSON in the response
+            json_match = re.search(r'\{.*\}', json_content, re.DOTALL)
+            if json_match:
+                json_content = json_match.group(0)
+            
+            parsed_data = json.loads(json_content)
+            
+            # Create JobPosting from parsed data
+            job_posting = JobPosting(
+                url=raw_content.url,
+                title=parsed_data.get('title', ''),
+                company=parsed_data.get('company', ''),
+                location=parsed_data.get('location', ''),
+                description=parsed_data.get('description', ''),
+                requirements=parsed_data.get('requirements', []),
+                skills=parsed_data.get('skills', []),
+                salary_range=parsed_data.get('salary_range', ''),
+                job_type=parsed_data.get('job_type', ''),
+                experience_level=parsed_data.get('experience_level', ''),
+                posted_date=parsed_data.get('posted_date', ''),
+                raw_content=raw_content
+            )
+            
+            logger.info(f"Successfully parsed job: {job_posting.title} at {job_posting.company}")
+            return job_posting
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse JSON response: {e}")
+            logger.debug(f"Raw response: {response.content[:500]}...")
+            
+            # Fallback: try to extract basic info with simple parsing
+            return self._fallback_parse_job_content(raw_content, response.content)
+        
+        except Exception as e:
+            logger.error(f"Unexpected error parsing job content: {e}")
+            return JobPosting(
+                url=raw_content.url,
+                title="Parsing Error",
+                description=f"Error parsing content: {str(e)}",
+                raw_content=raw_content
+            )
+    
+    def _fallback_parse_job_content(self, raw_content: RawJobContent, llm_response: str) -> JobPosting:
+        """
+        Fallback method to extract basic job info when JSON parsing fails.
+        
+        Args:
+            raw_content: The original raw content
+            llm_response: The LLM response that couldn't be parsed as JSON
+            
+        Returns:
+            JobPosting with basic extracted information
+        """
+        logger.info("Using fallback parsing method")
+        
+        # Try to extract basic information using simple text processing
+        content = raw_content.cleaned_text.lower()
+        
+        # Extract title (look for common patterns)
+        title = ""
+        title_patterns = [
+            r'job title[:\s]+([^\n]+)',
+            r'position[:\s]+([^\n]+)',
+            r'role[:\s]+([^\n]+)'
+        ]
+        
+        for pattern in title_patterns:
+            match = re.search(pattern, llm_response, re.IGNORECASE)
+            if match:
+                title = match.group(1).strip()
+                break
+        
+        # Extract company
+        company = ""
+        company_patterns = [
+            r'company[:\s]+([^\n]+)',
+            r'employer[:\s]+([^\n]+)'
+        ]
+        
+        for pattern in company_patterns:
+            match = re.search(pattern, llm_response, re.IGNORECASE)
+            if match:
+                company = match.group(1).strip()
+                break
+        
+        # Use page title as fallback
+        if not title and raw_content.page_title:
+            title = raw_content.page_title
+        
+        return JobPosting(
+            url=raw_content.url,
+            title=title or "Position Available",
+            company=company or raw_content.domain,
+            description=llm_response[:1000] if llm_response else "Content extracted via fallback method",
+            raw_content=raw_content
+        )
+
     def personalize_resume(self, 
                           base_latex_resume: str, 
                           job_posting: JobPosting) -> ResumePersonalization:
@@ -575,14 +788,21 @@ class OllamaIntegration:
         """Get list of available models."""
         try:
             models = self.client.list()
-            return [m['name'] for m in models['models']]
+            if 'models' in models:
+                return [m.get('name', m.get('model', 'unknown')) for m in models['models']]
+            return []
         except Exception as e:
             logger.error(f"Failed to list models: {e}")
             return []
     
     def pull_recommended_models(self) -> bool:
         """Pull recommended models for the job application system."""
-        recommended_models = ['llama2', 'codellama']
+        recommended_models = [
+            'llama3.2:3b',    # Fast parsing model
+            'gpt-oss:20b',    # Main content generation model
+            'llama2',         # Backup model
+            'codellama'       # Code-related tasks
+        ]
         
         logger.info("Pulling recommended models for job application automation...")
         
@@ -598,7 +818,7 @@ class OllamaIntegration:
 
 
 def main():
-    """Example usage of the Ollama integration."""
+    """Example usage of the Ollama integration with the new job parsing."""
     try:
         # Initialize the integration
         ollama_client = OllamaIntegration()
@@ -607,39 +827,87 @@ def main():
         models = ollama_client.list_available_models()
         print(f"Available models: {models}")
         
-        # Example job posting for testing
-        from job_scraper import JobPosting
-        test_job = JobPosting(
-            url="https://example.com/job",
-            title="Senior Python Developer",
-            company="Tech Startup Inc.",
-            location="San Francisco, CA",
-            description="We are looking for a Senior Python Developer with experience in Django, React, and AWS.",
-            skills=['python', 'django', 'react', 'aws'],
-            requirements=['5+ years Python experience', 'Django framework knowledge', 'AWS cloud experience']
+        # Example: Demonstrate the new two-step job parsing process
+        from job_scraper import JobScraper, RawJobContent
+        
+        # Step 1: Scrape raw content
+        test_url = "https://careers.datadoghq.com/detail/7127832/?gh_jid=7127832"
+        
+        print(f"\\n=== Testing Multi-Model Job Processing ===")
+        print(f"Parsing Model: {ollama_client.parsing_model}")
+        print(f"Content Generation Model: {ollama_client.default_model}")
+        print(f"URL: {test_url}")
+        
+        # Create a sample raw content (in real usage, this comes from JobScraper)
+        sample_raw_content = RawJobContent(
+            url=test_url,
+            cleaned_text="""
+            Senior Python Developer
+            Datadog - San Francisco, CA
+            
+            We are looking for a Senior Python Developer to join our infrastructure team.
+            
+            Requirements:
+            • 5+ years Python development experience
+            • Experience with Django or Flask
+            • Strong understanding of AWS services
+            • Experience with Docker and Kubernetes
+            • Bachelor's degree in Computer Science or related field
+            
+            Responsibilities:
+            • Build scalable Python applications
+            • Work with cross-functional teams
+            • Optimize performance and reliability
+            • Mentor junior developers
+            
+            Skills: Python, Django, Flask, AWS, Docker, Kubernetes, PostgreSQL, Redis
+            
+            We offer competitive salary, health benefits, and stock options.
+            This is a full-time position based in San Francisco with remote work options.
+            """,
+            page_title="Senior Python Developer - Datadog Careers",
+            domain="careers.datadoghq.com",
+            success=True
         )
         
-        # Test cover letter generation
-        print("\\nGenerating cover letter...")
-        cover_letter = ollama_client.generate_cover_letter(test_job)
+        # Step 2: Parse job details with small LLM model
+        print("\\nStep 2: Parsing job details with compact LLM...")
+        job_posting = ollama_client.parse_job_content(sample_raw_content)
+        
+        print(f"\\n=== Parsed Job Details ===")
+        print(f"Title: {job_posting.title}")
+        print(f"Company: {job_posting.company}")
+        print(f"Location: {job_posting.location}")
+        print(f"Job Type: {job_posting.job_type}")
+        print(f"Experience Level: {job_posting.experience_level}")
+        print(f"Skills: {', '.join(job_posting.skills[:5])}")
+        print(f"Requirements: {len(job_posting.requirements)} found")
+        
+        # Step 3: Test cover letter generation with large model
+        print("\\n=== Testing Cover Letter Generation (Large Model) ===")
+        cover_letter = ollama_client.generate_cover_letter(job_posting)
         print(f"Generated cover letter ({len(cover_letter.cover_letter_markdown)} chars)")
         
-        # Test fit score assessment with dummy resume
-        print("\\nAssessing fit score...")
+        # Step 4: Test fit score assessment with large model
+        print("\\n=== Testing Fit Score Assessment (Large Model) ===")
         dummy_resume = """
-        John Doe
-        Python Developer with 6 years experience
-        - Expert in Python, Django, Flask
-        - Experience with AWS, Docker, Kubernetes  
-        - Built web applications using React and JavaScript
+        John Doe - Python Developer
+        5 years of experience building web applications with Python
+        • Expert in Python, Django, Flask
+        • Experience with AWS, Docker, Kubernetes  
+        • Built scalable applications for 1M+ users
+        • Bachelor's in Computer Science, GPA 3.8
         """
         
-        fit_assessment = ollama_client.assess_fit_score(dummy_resume, test_job)
+        fit_assessment = ollama_client.assess_fit_score(dummy_resume, job_posting)
         print(f"Fit Score: {fit_assessment.fit_score}/100")
-        print(f"Strengths: {fit_assessment.strengths}")
+        print(f"Strengths: {', '.join(fit_assessment.strengths[:3])}")
+        print(f"Confidence: {fit_assessment.confidence_level}")
         
     except Exception as e:
         print(f"Error in Ollama integration: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

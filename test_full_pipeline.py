@@ -136,24 +136,39 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
     
     try:
-        print_separator("🕷️  STEP 1: SCRAPING JOB POSTING")
+        print_separator("🕷️  STEP 1: SCRAPING AND PARSING JOB POSTING")
         
         if use_sample:
             job_posting = sample_job
             print("Using sample job posting for demonstration...")
         else:
-            # Initialize job scraper
-            print("🔄 Initializing job scraper...")
-            with JobScraper(use_selenium=False, headless=True) as scraper:
-                print(f"🌐 Scraping job posting: {job_url}")
-                job_posting = scraper.scrape_job(job_url)
+            # Initialize job scraper and Ollama client
+            print("🔄 Initializing job scraper and LLM parser...")
+            ollama_client = OllamaIntegration()
+            
+            with JobScraper(use_selenium=True, headless=True) as scraper:
+                print(f"🌐 Step 1a: Scraping raw content from: {job_url}")
+                raw_content = scraper.scrape_raw_content(job_url)
+                
+                if not raw_content.success:
+                    print(f"❌ Failed to scrape content: {raw_content.error_message}")
+                    print("Using sample job posting instead...")
+                    job_posting = sample_job
+                else:
+                    print(f"✅ Raw content extracted ({len(raw_content.cleaned_text)} chars)")
+                    print(f"   Domain: {raw_content.domain}")
+                    print(f"   Page title: {raw_content.page_title}")
+                    
+                    print(f"🧠 Step 1b: Parsing job details with LLM...")
+                    job_posting = ollama_client.parse_job_content(raw_content)
+                    
+                    if not job_posting.title or "Error" in job_posting.title:
+                        print("❌ LLM parsing failed. Using sample data...")
+                        job_posting = sample_job
+                    else:
+                        print("✅ Job details parsed successfully!")
         
         print_job_info(job_posting)
-        
-        if not job_posting.title or "Error:" in job_posting.title:
-            print("❌ Failed to scrape job posting properly. Using sample data...")
-            job_posting = sample_job
-            print_job_info(job_posting)
         
         print_separator("📄 STEP 2: PERSONALIZING RESUME")
         
@@ -202,9 +217,10 @@ def main():
         
         print_separator("🎯 STEP 4: ASSESSING FIT SCORE")
         
-        # Initialize Ollama integration for fit scoring
+        # Use existing Ollama client if available, otherwise initialize
         print("🔄 Assessing candidate fit...")
-        ollama_client = OllamaIntegration()
+        if 'ollama_client' not in locals():
+            ollama_client = OllamaIntegration()
         
         # Get resume content for fit assessment
         with open(os.path.join(output_dir, "personalized_resume.tex"), 'r') as f:
