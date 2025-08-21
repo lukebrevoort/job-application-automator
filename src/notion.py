@@ -266,6 +266,81 @@ class Notion:
                 }
             })
         
+        # Add detailed fit assessment feedback if available
+        if job_data.get("detailed_feedback"):
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {
+                                "content": "🎯 Detailed Fit Analysis"
+                            },
+                            "annotations": {
+                                "bold": True
+                            }
+                        }
+                    ]
+                }
+            })
+            
+            # Split detailed feedback into paragraphs
+            feedback_paragraphs = job_data["detailed_feedback"].split('\n\n')
+            for paragraph in feedback_paragraphs:
+                if paragraph.strip():
+                    blocks.append({
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {
+                            "rich_text": [
+                                {
+                                    "type": "text",
+                                    "text": {
+                                        "content": paragraph.strip()
+                                    }
+                                }
+                            ]
+                        }
+                    })
+        
+        # Add score breakdown if available
+        if job_data.get("score_breakdown"):
+            blocks.append({
+                "object": "block",
+                "type": "heading_2",
+                "heading_2": {
+                    "rich_text": [
+                        {
+                            "type": "text",
+                            "text": {
+                                "content": "📊 Score Breakdown"
+                            },
+                            "annotations": {
+                                "bold": True
+                            }
+                        }
+                    ]
+                }
+            })
+            
+            for category, score in job_data["score_breakdown"].items():
+                blocks.append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [
+                            {
+                                "type": "text",
+                                "text": {
+                                    "content": f"**{category.replace('_', ' ').title()}:** {score}/100"
+                                }
+                            }
+                        ]
+                    }
+                })
+        
         if job_data.get("key_strengths"):
             blocks.append({
                 "object": "block",

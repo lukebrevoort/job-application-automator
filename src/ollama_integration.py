@@ -76,6 +76,8 @@ class FitScoreAssessment:
     missing_skills: List[str]
     recommendations: List[str]
     confidence_level: str
+    detailed_feedback: str  # New field for comprehensive analysis
+    score_breakdown: Dict[str, int]  # New field for category-wise scores
 
 
 class OllamaIntegration:
@@ -630,79 +632,107 @@ class OllamaIntegration:
                         job_posting: JobPosting,
                         cover_letter: str = None) -> FitScoreAssessment:
         """
-        Assess the fit between a resume/cover letter and job posting.
+        Assess the fit between a resume/cover letter and job posting using Llama 3.2.
         
         Args:
-            resume_content: The resume content (LaTeX or plain text)
+            resume_content: The complete resume content (LaTeX or plain text)
             job_posting: The job posting to assess against
             cover_letter: Optional cover letter content
             
         Returns:
             FitScoreAssessment object with detailed analysis
         """
-        logger.info(f"Assessing fit score for {job_posting.title} at {job_posting.company}")
+        logger.info(f"Assessing fit score for {job_posting.title} at {job_posting.company} using Llama 3.2")
         
-        system_prompt = """
-        You are an experienced recruiter and hiring manager. Assess how well a candidate's 
-        resume and cover letter match a job posting. Be honest and critical in your evaluation.
-        
-        Evaluation Criteria:
-        1. Required skills match (40% weight)
-        2. Experience level match (25% weight)
-        3. Industry/domain knowledge (20% weight)
-        4. Education requirements (10% weight)
-        5. Soft skills and cultural fit (5% weight)
-        
-        Provide a realistic fit score from 1-100 where:
-        - 90-100: Excellent fit, very likely to get interview
-        - 80-89: Strong fit, good chance for interview
-        - 70-79: Moderate fit, possible interview
-        - 60-69: Weak fit, unlikely interview
-        - Below 60: Poor fit, very unlikely interview
-        
-        Be critical and realistic. Don't inflate scores.
-        """
-        
-        prompt = f"""
-        Assess the fit between this candidate and job posting:
-        
-        JOB POSTING:
-        Title: {job_posting.title}
-        Company: {job_posting.company}
-        Location: {job_posting.location}
-        
-        Description: {job_posting.description[:2000]}
-        Required Skills: {', '.join(job_posting.skills)}
-        Requirements: {'; '.join(job_posting.requirements)}
-        
-        CANDIDATE RESUME:
-        {resume_content[:3000]}
-        
-        {"COVER LETTER:" + cover_letter[:1500] if cover_letter else ""}
-        
-        Provide your assessment in this JSON format:
-        {{
-            "fit_score": <number 1-100>,
-            "strengths": ["strength1", "strength2", "strength3"],
-            "weaknesses": ["weakness1", "weakness2"],
-            "missing_skills": ["skill1", "skill2"],
-            "recommendations": ["recommendation1", "recommendation2"],
-            "confidence_level": "High|Medium|Low",
-            "reasoning": "Brief explanation of the score"
-        }}
-        
-        Be honest and critical. This is for self-improvement, not to impress.
-        """
-        
+        system_prompt = """You are an expert technical recruiter and hiring manager with 15+ years of experience in evaluating candidates for software engineering and technical roles. You have a deep understanding of what makes candidates successful in various tech positions.
+
+Your task is to provide a comprehensive, honest, and actionable assessment of how well a candidate fits a specific job posting. Be thorough, analytical, and constructive in your feedback.
+
+EVALUATION FRAMEWORK:
+1. Technical Skills Match (40% weight) - Required technologies, programming languages, frameworks
+2. Experience Level & Depth (25% weight) - Years of experience, project complexity, leadership
+3. Industry/Domain Knowledge (15% weight) - Relevant industry experience, domain expertise
+4. Education & Certifications (10% weight) - Degree requirements, relevant certifications
+5. Soft Skills & Cultural Fit (10% weight) - Communication, teamwork, leadership, adaptability
+
+SCORING GUIDELINES:
+- 95-100: Exceptional fit - Dream candidate, exceeds all requirements
+- 85-94: Excellent fit - Strong candidate, meets all key requirements with extras
+- 75-84: Good fit - Solid candidate, meets most requirements
+- 65-74: Moderate fit - Acceptable candidate, meets some requirements
+- 55-64: Weak fit - Borderline candidate, missing several key requirements
+- Below 55: Poor fit - Not suitable for this role
+
+Be honest and realistic. Provide specific examples from the resume to support your assessment."""
+
+        prompt = f"""Please provide a comprehensive fit assessment for this candidate and job posting:
+
+JOB POSTING DETAILS:
+===================
+Title: {job_posting.title}
+Company: {job_posting.company}
+Location: {job_posting.location}
+
+Job Description:
+{job_posting.description}
+
+Required Skills: {', '.join(job_posting.skills)}
+Key Requirements: {'; '.join(job_posting.requirements)}
+
+CANDIDATE MATERIALS:
+===================
+RESUME:
+{resume_content}
+
+{f"COVER LETTER:{cover_letter}" if cover_letter else "No cover letter provided."}
+
+ASSESSMENT REQUIREMENTS:
+========================
+You MUST respond with valid JSON only. Do not include any text before or after the JSON. Here is the exact format:
+
+{{
+    "fit_score": 82,
+    "score_breakdown": {{
+        "technical_skills": 90,
+        "experience_level": 80,
+        "domain_knowledge": 70,
+        "education": 95,
+        "soft_skills": 85
+    }},
+    "strengths": [
+        "Strong Python programming foundation demonstrated through multiple projects",
+        "Machine learning expertise shown in NLP research and AI integration projects",
+        "Full-stack development capabilities with React/Next.js and backend APIs"
+    ],
+    "weaknesses": [
+        "Limited professional experience (student vs 5+ years required)",
+        "No explicit mention of Django or FastAPI framework experience",
+        "Missing cloud deployment and production scaling experience"
+    ],
+    "missing_skills": [
+        "Django framework experience",
+        "FastAPI development",
+        "Production AWS deployment experience"
+    ],
+    "recommendations": [
+        "Build a Django project to demonstrate web framework proficiency",
+        "Create FastAPI microservices to show modern Python API development",
+        "Deploy personal projects to AWS to gain cloud platform experience"
+    ],
+    "detailed_feedback": "Luke demonstrates strong technical potential with excellent academic performance (3.96 GPA) and impressive project portfolio. His machine learning background through NLP research and AI integration projects shows deep technical competency. The personal website achieving 95%+ Lighthouse score indicates attention to performance and quality. However, he lacks the required 5+ years professional experience and specific Django/FastAPI framework knowledge. His JavaScript/React skills could transfer well to full-stack development. The research internship shows ability to work with complex technical challenges. Recommendations focus on gaining specific Python web framework experience and cloud deployment skills.",
+    "confidence_level": "High"
+}}"""
+
+        # Use Llama 3.2 for better token handling and more detailed analysis
         response = self._generate_with_retry(
-            model=self.default_model,
+            model="llama3.2",  # Changed to Llama 3.2 for better token capacity
             prompt=prompt,
             system_prompt=system_prompt
         )
-        
+
         if not response.success:
             raise RuntimeError(f"Failed to assess fit score: {response.error_message}")
-        
+
         try:
             # Try to parse JSON response
             result_data = json.loads(response.content.strip())
@@ -713,24 +743,33 @@ class OllamaIntegration:
                 weaknesses=result_data.get('weaknesses', []),
                 missing_skills=result_data.get('missing_skills', []),
                 recommendations=result_data.get('recommendations', []),
-                confidence_level=result_data.get('confidence_level', 'Low')
+                confidence_level=result_data.get('confidence_level', 'Low'),
+                detailed_feedback=result_data.get('detailed_feedback', 'No detailed feedback available'),
+                score_breakdown=result_data.get('score_breakdown', {})
             )
-        except json.JSONDecodeError:
-            # Fallback to simple parsing if JSON fails
-            logger.warning("Failed to parse JSON response, using fallback parsing")
+        except json.JSONDecodeError as e:
+            # Enhanced fallback parsing with better error handling
+            logger.warning(f"Failed to parse JSON response: {e}")
+            logger.debug(f"Raw response: {response.content[:500]}...")
             
-            # Simple regex-based score extraction
+            # Try to extract at least the fit score
             import re
             score_match = re.search(r'(?:fit_score|score).*?(\d+)', response.content, re.IGNORECASE)
             fit_score = int(score_match.group(1)) if score_match else 50
             
+            # Try to extract some basic feedback
+            strengths = re.findall(r'strength[s]?:\s*(.+?)(?:\n|$)', response.content, re.IGNORECASE)
+            weaknesses = re.findall(r'weakness[es]*:\s*(.+?)(?:\n|$)', response.content, re.IGNORECASE)
+            
             return FitScoreAssessment(
                 fit_score=fit_score,
-                strengths=["Analysis available in raw response"],
-                weaknesses=["Could not parse detailed feedback"],
+                strengths=strengths[:3] if strengths else ["Analysis available in raw response"],
+                weaknesses=weaknesses[:3] if weaknesses else ["Could not parse detailed feedback"],
                 missing_skills=[],
-                recommendations=["Review LLM response manually"],
-                confidence_level="Low"
+                recommendations=["Review LLM response manually for detailed feedback"],
+                confidence_level="Low",
+                detailed_feedback=f"Raw analysis (JSON parsing failed): {response.content[:1000]}...",
+                score_breakdown={}
             )
     
     def _extract_key_changes(self, original: str, modified: str) -> List[str]:
