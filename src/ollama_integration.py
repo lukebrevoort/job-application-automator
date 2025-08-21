@@ -667,61 +667,71 @@ Be honest and realistic. Provide specific examples from the resume to support yo
 
         prompt = f"""Please provide a comprehensive fit assessment for this candidate and job posting:
 
-JOB POSTING DETAILS:
-===================
-Title: {job_posting.title}
-Company: {job_posting.company}
-Location: {job_posting.location}
+    JOB POSTING DETAILS:
+    ===================
+    Title: {job_posting.title}
+    Company: {job_posting.company}
+    Location: {job_posting.location}
 
-Job Description:
-{job_posting.description}
+    Job Description:
+    {job_posting.description}
 
-Required Skills: {', '.join(job_posting.skills)}
-Key Requirements: {'; '.join(job_posting.requirements)}
+    Required Skills: {', '.join(job_posting.skills)}
+    Key Requirements: {'; '.join(job_posting.requirements)}
 
-CANDIDATE MATERIALS:
-===================
-RESUME:
-{resume_content}
+    CANDIDATE MATERIALS:
+    ===================
+    RESUME:
+    {resume_content}
 
-{f"COVER LETTER:{cover_letter}" if cover_letter else "No cover letter provided."}
+    {f"COVER LETTER:{cover_letter}" if cover_letter else "No cover letter provided."}
 
-ASSESSMENT REQUIREMENTS:
-========================
-You MUST respond with valid JSON only. Do not include any text before or after the JSON. Here is the exact format:
+    CRITICAL INSTRUCTIONS:
+    ======================
+    1. NEVER INVENT, FABRICATE, OR ASSUME EXPERIENCE THAT IS NOT EXPLICITLY STATED IN THE RESUME
+    2. ONLY assess based on what is actually written in the candidate's materials
+    3. If information is missing or unclear, note it as a weakness or missing skill
+    4. Do NOT fill in gaps with assumptions about the candidate's abilities
+    5. Be honest about any experience gaps - this helps the candidate understand what they need to improve
 
-{{
-    "fit_score": 82,
-    "score_breakdown": {{
+    ASSESSMENT REQUIREMENTS:
+    ========================
+    You MUST respond with valid JSON only. Do not include any text before or after the JSON. Base your assessment ONLY on the actual content provided in the resume and cover letter. Here is the exact format:
+
+    {{
+        "fit_score": 82,
+        "score_breakdown": {{
         "technical_skills": 90,
         "experience_level": 80,
         "domain_knowledge": 70,
         "education": 95,
         "soft_skills": 85
-    }},
-    "strengths": [
+        }},
+        "strengths": [
         "Strong Python programming foundation demonstrated through multiple projects",
         "Machine learning expertise shown in NLP research and AI integration projects",
         "Full-stack development capabilities with React/Next.js and backend APIs"
-    ],
-    "weaknesses": [
+        ],
+        "weaknesses": [
         "Limited professional experience (student vs 5+ years required)",
         "No explicit mention of Django or FastAPI framework experience",
         "Missing cloud deployment and production scaling experience"
-    ],
-    "missing_skills": [
+        ],
+        "missing_skills": [
         "Django framework experience",
         "FastAPI development",
         "Production AWS deployment experience"
-    ],
-    "recommendations": [
+        ],
+        "recommendations": [
         "Build a Django project to demonstrate web framework proficiency",
         "Create FastAPI microservices to show modern Python API development",
         "Deploy personal projects to AWS to gain cloud platform experience"
-    ],
-    "detailed_feedback": "Luke demonstrates strong technical potential with excellent academic performance (3.96 GPA) and impressive project portfolio. His machine learning background through NLP research and AI integration projects shows deep technical competency. The personal website achieving 95%+ Lighthouse score indicates attention to performance and quality. However, he lacks the required 5+ years professional experience and specific Django/FastAPI framework knowledge. His JavaScript/React skills could transfer well to full-stack development. The research internship shows ability to work with complex technical challenges. Recommendations focus on gaining specific Python web framework experience and cloud deployment skills.",
-    "confidence_level": "High"
-}}"""
+        ],
+        "detailed_feedback": "EXAMPLE RESPONSE - This is just an example format. Your actual assessment must be based solely on the real resume content provided above. Luke demonstrates strong technical potential with excellent academic performance (3.96 GPA) and impressive project portfolio. His machine learning background through NLP research and AI integration projects shows deep technical competency. The personal website achieving 95%+ Lighthouse score indicates attention to performance and quality. However, he lacks the required 5+ years professional experience and specific Django/FastAPI framework knowledge. His JavaScript/React skills could transfer well to full-stack development. The research internship shows ability to work with complex technical challenges. Recommendations focus on gaining specific Python web framework experience and cloud deployment skills.",
+        "confidence_level": "High"
+    }}
+
+    REMINDER: The above JSON is just an EXAMPLE FORMAT. Your actual response must evaluate the real candidate based ONLY on their actual resume content. Do not copy the example assessment - create a genuine assessment based on what's actually in the provided resume."""
 
         # Use Llama 3.2 for better token handling and more detailed analysis
         response = self._generate_with_retry(
