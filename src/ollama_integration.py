@@ -735,7 +735,7 @@ Be honest and realistic. Provide specific examples from the resume to support yo
 
         # Use Llama 3.2 for better token handling and more detailed analysis
         response = self._generate_with_retry(
-            model="llama3.2",  # Changed to Llama 3.2 for better token capacity
+            model="llama3.2:3b",  # Changed to Llama 3.2 for better token capacity
             prompt=prompt,
             system_prompt=system_prompt
         )
