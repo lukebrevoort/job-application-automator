@@ -20,6 +20,8 @@ from enum import Enum
 
 import ollama
 from job_scraper import JobPosting, RawJobContent
+from token_optimizer import TokenOptimizer, OptimizedContent
+from config import SystemConfig
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -89,24 +91,50 @@ class OllamaIntegration:
     """
     
     def __init__(self, 
-                 default_model: str = "gpt-oss:20b",
-                 parsing_model: str = "llama3.2:3b",
-                 timeout: int = 120,
-                 max_retries: int = 3):
+                 config: SystemConfig = None,
+                 # Legacy parameters for backwards compatibility
+                 default_model: str = None,
+                 parsing_model: str = None,
+                 timeout: int = None,
+                 max_retries: int = None,
+                 optimize_tokens: bool = None):
         """
         Initialize the Ollama integration.
         
         Args:
-            default_model: Default model to use for content generation operations
-            parsing_model: Smaller, faster model to use for parsing operations
-            timeout: Timeout for LLM requests in seconds
-            max_retries: Maximum number of retry attempts
+            config: SystemConfig object for comprehensive configuration
+            default_model: (Legacy) Default model to use for content generation operations
+            parsing_model: (Legacy) Smaller, faster model to use for parsing operations
+            timeout: (Legacy) Timeout for LLM requests in seconds
+            max_retries: (Legacy) Maximum number of retry attempts
+            optimize_tokens: (Legacy) Whether to enable token optimization
         """
-        self.default_model = default_model
-        self.parsing_model = parsing_model
-        self.timeout = timeout
-        self.max_retries = max_retries
+        # Use provided config or create default
+        if config is None:
+            config = SystemConfig.default()
+            
+        # Override with legacy parameters if provided
+        if default_model is not None:
+            config.models.default_model = default_model
+        if parsing_model is not None:
+            config.models.parsing_model = parsing_model
+        if timeout is not None:
+            config.models.timeout = timeout
+        if max_retries is not None:
+            config.models.max_retries = max_retries
+        if optimize_tokens is not None:
+            config.token_optimization.enabled = optimize_tokens
+            
+        self.config = config
+        self.default_model = config.models.default_model
+        self.parsing_model = config.models.parsing_model
+        self.timeout = config.models.timeout
+        self.max_retries = config.models.max_retries
+        self.optimize_tokens = config.token_optimization.enabled
         self.client = ollama.Client()
+        
+        # Initialize token optimizer
+        self.token_optimizer = TokenOptimizer() if self.optimize_tokens else None
         
         # Available models cache
         self._available_models = None
@@ -275,15 +303,41 @@ class OllamaIntegration:
         Be thorough but concise. Focus on accuracy over completeness.
         """
         
-        # Prepare the content for parsing
-        content_to_parse = f"""
-        URL: {raw_content.url}
-        Domain: {raw_content.domain}
-        Page Title: {raw_content.page_title}
-        
-        PAGE CONTENT:
-        {raw_content.cleaned_text[:8000]}  # Limit to 8k chars to avoid token limits
-        """
+        # Prepare the content for parsing with optimization
+        if self.optimize_tokens and self.token_optimizer:
+            # Optimize the raw content before parsing
+            content_text = f"""
+URL: {raw_content.url}
+Domain: {raw_content.domain}
+Page Title: {raw_content.page_title}
+
+PAGE CONTENT:
+{raw_content.cleaned_text[:12000]}"""  # Slightly larger initial limit
+            
+            # Estimate tokens and optimize if needed
+            estimated_tokens = self.token_optimizer.get_token_estimate(content_text)
+            if estimated_tokens > 2000:  # If content is too large
+                # Truncate more aggressively and focus on key sections
+                key_content = self._extract_key_job_content(raw_content.cleaned_text)
+                content_to_parse = f"""
+URL: {raw_content.url}
+Domain: {raw_content.domain}
+Page Title: {raw_content.page_title}
+
+PAGE CONTENT:
+{key_content}"""
+                logger.info(f"Optimized job content from {estimated_tokens} to ~{self.token_optimizer.get_token_estimate(content_to_parse)} tokens")
+            else:
+                content_to_parse = content_text
+        else:
+            content_to_parse = f"""
+URL: {raw_content.url}
+Domain: {raw_content.domain}
+Page Title: {raw_content.page_title}
+
+PAGE CONTENT:
+{raw_content.cleaned_text[:8000]}  # Limit to 8k chars to avoid token limits
+"""
         
         prompt = f"""
         Please extract structured job information from this web page content.
@@ -421,6 +475,36 @@ class OllamaIntegration:
             description=llm_response[:1000] if llm_response else "Content extracted via fallback method",
             raw_content=raw_content
         )
+    
+    def _extract_key_job_content(self, content: str) -> str:
+        """Extract the most relevant parts of job posting content."""
+        # Look for key sections in job postings - use non-capturing groups to avoid tuples
+        key_patterns = [
+            r'(?i)(?:job description|role|position|responsibilities)[\s\S]{1,800}',
+            r'(?i)(?:requirements|qualifications|skills)[\s\S]{1,600}',
+            r'(?i)(?:experience|background)[\s\S]{1,400}',
+            r'(?i)(?:benefits|compensation|salary)[\s\S]{1,300}',
+            r'(?i)about (?:us|the company|the role)[\s\S]{1,400}'
+        ]
+        
+        key_sections = []
+        for pattern in key_patterns:
+            matches = re.findall(pattern, content)
+            # Now matches will be strings instead of tuples
+            key_sections.extend(matches)
+        
+        # If we found key sections, use them
+        if key_sections:
+            combined = ' '.join(key_sections)
+            if len(combined) <= 6000:
+                return combined
+            
+        # Fallback: take the middle portion which usually has the main content
+        content_length = len(content)
+        start = content_length // 4  # Skip header/navigation
+        end = start + 6000  # Take 6k chars from middle
+        
+        return content[start:end]
 
     def personalize_resume(self, 
                           base_latex_resume: str, 
@@ -439,57 +523,90 @@ class OllamaIntegration:
         """
         logger.info(f"Personalizing resume for {job_posting.title} at {job_posting.company}")
         
-        system_prompt = """
-        You are an expert resume writer and LaTeX specialist. Your job is to personalize a LaTeX resume 
-        for a specific job posting while maintaining the original structure and formatting.
+        # Optimize inputs if token optimization is enabled
+        if self.optimize_tokens and self.token_optimizer:
+            # Optimize the resume content
+            optimized_resume = self.token_optimizer.optimize_resume_for_job(
+                base_latex_resume, job_posting, 
+                max_tokens=self.config.token_optimization.max_resume_tokens
+            )
+            logger.info(f"Optimized resume: {optimized_resume.compression_ratio:.2f} compression ratio")
+            
+            # Optimize job posting information
+            optimized_job = self.token_optimizer.condense_job_posting(
+                job_posting, max_tokens=self.config.token_optimization.max_job_description_tokens
+            )
+            
+            working_resume = optimized_resume.optimized_text
+            job_description_text = optimized_job.optimized_text
+        else:
+            working_resume = base_latex_resume
+            job_description_text = f"""Job Title: {job_posting.title}
+Company: {job_posting.company}
+Location: {job_posting.location}
+
+Job Description:
+{job_posting.description[:2000]}  # Truncate to avoid token limits
+
+Key Skills Required: {', '.join(job_posting.skills[:10])}
+Key Requirements: {'; '.join(job_posting.requirements[:8])}"""
         
-        Guidelines:
-        1. Preserve ALL LaTeX formatting, commands, and structure
-        2. Emphasize relevant experience and skills that match the job requirements
-        3. Reorder bullet points to put most relevant items first
-        4. Adjust descriptions to use keywords from the job posting
-        5. Do NOT add fake experience or skills
-        6. Do NOT change personal information, contact details, or education dates
-        7. Focus on making existing content more relevant and impactful
-        8. Use action verbs and quantified achievements where possible
-        9. If additional context is provided, use it to highlight specific achievements or technologies
+        system_prompt = """You are an expert resume writer and LaTeX specialist. Your job is to transform a MASTER RESUME into a specialized, targeted resume for a specific job posting.
+
+CRITICAL UNDERSTANDING: The input resume is a MASTER RESUME containing ALL of the candidate's experience, projects, and skills across their entire career. Your task is to CREATE A SPECIALIZED VERSION by selecting, prioritizing, and optimizing content to best match the target job.
+
+SPECIALIZATION REQUIREMENTS:
+1. CONTENT PRIORITIZATION: Reorder and emphasize the most relevant experiences, projects, and skills first
+2. PROJECT SELECTION: Include 3-4 most relevant projects that best demonstrate job-relevant skills  
+3. BULLET POINT OPTIMIZATION: Keep 3-5 strong bullet points per role/project, focusing on most relevant and impactful ones
+4. STRATEGIC TRIMMING: Remove only clearly irrelevant content while maintaining substantial resume body
+5. LENGTH OPTIMIZATION: Aim to fill most of a full page - better to be slightly over than significantly under
+
+CONTENT ENHANCEMENT GUIDELINES:
+6. Preserve ALL LaTeX formatting, commands, and structure
+7. Emphasize relevant experience and skills that match the job requirements
+8. Adjust descriptions to use keywords from the job posting naturally
+9. Do NOT add fake experience or skills - only enhance what's provided
+10. Do NOT change personal information, contact details, or education dates
+11. Use strong action verbs and highlight quantified achievements
+12. If additional context is provided, use it to emphasize specific achievements or technologies
+
+SPECIALIZATION STRATEGY:
+- Lead with the most job-relevant content while keeping supporting experiences
+- Enhance relevant bullet points with job-specific keywords and focus
+- Trim only the least relevant details, not entire sections
+- Ensure the resume tells a compelling story for this specific role
+- Maintain enough content to demonstrate depth of experience
+
+Return ONLY the specialized LaTeX code, nothing else."""
         
-        Return ONLY the modified LaTeX code, nothing else.
-        """
+        # Optimize system prompt if token optimization is enabled
+        if self.optimize_tokens and self.token_optimizer:
+            system_prompt = self.token_optimizer.optimize_system_prompts(system_prompt)
         
         additional_context_instruction = ""
         if additional_context:
             additional_context_instruction = f"""
+
+IMPORTANT ADDITIONAL CONTEXT:
+The candidate has specifically highlighted the following information that should be emphasized where relevant:
+{additional_context}
+
+Please ensure this information is prominently featured in the personalized resume where it relates to the job requirements."""
         
-        IMPORTANT ADDITIONAL CONTEXT:
-        The candidate has specifically highlighted the following information that should be emphasized where relevant:
-        {additional_context}
-        
-        Please ensure this information is prominently featured in the personalized resume where it relates to the job requirements.
-        """
-        
-        prompt = f"""
-        Please personalize this LaTeX resume for the following job:
-        
-        Job Title: {job_posting.title}
-        Company: {job_posting.company}
-        Location: {job_posting.location}
-        
-        Job Description:
-        {job_posting.description[:2000]}  # Truncate to avoid token limits
-        
-        Key Skills Required: {', '.join(job_posting.skills[:10])}
-        Key Requirements: {'; '.join(job_posting.requirements[:8])}
-        {additional_context_instruction}
-        Base LaTeX Resume:
-        {base_latex_resume}
-        
-        Personalize this resume to better match the job requirements. Focus on:
-        1. Highlighting relevant experience
-        2. Using keywords from the job description
-        3. Emphasizing matching skills
-        4. Reordering content for maximum impact
-        """
+        prompt = f"""Please personalize this LaTeX resume for the following job:
+
+{job_description_text}
+{additional_context_instruction}
+
+Base LaTeX Resume:
+{working_resume}
+
+Personalize this resume to better match the job requirements. Focus on:
+1. Highlighting relevant experience
+2. Using keywords from the job description
+3. Emphasizing matching skills
+4. Reordering content for maximum impact"""
         
         # Use general model for this task
         if not self.ensure_model(self.default_model):
@@ -534,39 +651,47 @@ class OllamaIntegration:
         """
         logger.info(f"Generating cover letter for {job_posting.title} at {job_posting.company}")
         
-        system_prompt = """
-        You are an expert career counselor and professional writer. Create compelling, 
-        personalized cover letters that showcase ONLY the candidate's real experience and skills.
+        system_prompt = """You are an expert career counselor and professional writer. Create compelling, personalized cover letters that showcase ONLY the candidate's real experience and skills.
+
+CRITICAL RULES:
+1. NEVER invent, fabricate, or hallucinate experience that isn't in the resume
+2. ONLY use experiences, projects, skills, and achievements explicitly mentioned in the provided resume
+3. If the resume doesn't have direct experience for something, focus on transferable skills
+4. Use exact details from the resume (GPA, company names, project names, technologies)
+5. Do not exaggerate or embellish achievements beyond what's stated in the resume
+6. If additional context is provided, use it to highlight specific achievements or projects
+
+Guidelines:
+1. Use a professional, engaging tone
+2. Show genuine interest in the company and role  
+3. Highlight specific relevant experience and skills FROM THE RESUME ONLY
+4. Include quantified achievements ONLY if they exist in the resume
+5. Keep it concise (3-4 paragraphs)
+6. Use active voice and strong action verbs
+7. Customize for the specific company and role
+8. End with a strong call to action
+
+Format the output as clean markdown."""
         
-        CRITICAL RULES:
-        1. NEVER invent, fabricate, or hallucinate experience that isn't in the resume
-        2. ONLY use experiences, projects, skills, and achievements explicitly mentioned in the provided resume
-        3. If the resume doesn't have direct experience for something, focus on transferable skills
-        4. Use exact details from the resume (GPA, company names, project names, technologies)
-        5. Do not exaggerate or embellish achievements beyond what's stated in the resume
-        6. If additional context is provided, use it to highlight specific achievements or projects
-        
-        Guidelines:
-        1. Use a professional, engaging tone
-        2. Show genuine interest in the company and role  
-        3. Highlight specific relevant experience and skills FROM THE RESUME ONLY
-        4. Include quantified achievements ONLY if they exist in the resume
-        5. Keep it concise (3-4 paragraphs)
-        6. Use active voice and strong action verbs
-        7. Customize for the specific company and role
-        8. End with a strong call to action
-        
-        Format the output as clean markdown.
-        """
+        # Optimize system prompt if enabled
+        if self.optimize_tokens and self.token_optimizer:
+            system_prompt = self.token_optimizer.optimize_system_prompts(system_prompt)
         
         # Parse resume content to extract key information
         parsed_resume = self._parse_resume_content(resume_content) if resume_content else {}
         
-        # Build context from available information
-        context_info = f"Job Title: {job_posting.title}\\n"
-        context_info += f"Company: {job_posting.company}\\n"
-        if job_posting.location:
-            context_info += f"Location: {job_posting.location}\\n"
+        # Build context from available information with optimization
+        if self.optimize_tokens and self.token_optimizer:
+            # Use optimized job posting
+            optimized_job = self.token_optimizer.condense_job_posting(
+                job_posting, max_tokens=self.config.token_optimization.max_cover_letter_context_tokens
+            )
+            context_info = optimized_job.optimized_text
+        else:
+            context_info = f"Job Title: {job_posting.title}\n"
+            context_info += f"Company: {job_posting.company}\n"
+            if job_posting.location:
+                context_info += f"Location: {job_posting.location}\n"
         
         # Add additional context if provided
         additional_context_section = ""
@@ -580,36 +705,29 @@ class OllamaIntegration:
         Please ensure this information is prominently featured in the cover letter where it relates to the job requirements.
         """
         
-        prompt = f"""
-        Write a compelling cover letter for this job posting using ONLY the candidate's real experience from their resume.
-        
-        JOB POSTING:
-        {context_info}
-        
-        Job Description:
-        {job_posting.description[:2000]}
-        
-        Key Skills Required: {', '.join(job_posting.skills[:8])}
-        Key Requirements: {'; '.join(job_posting.requirements[:6])}
-        
-        CANDIDATE'S ACTUAL RESUME CONTENT:
-        {resume_content[:4000] if resume_content else "No resume provided"}
-        
-        PERSONAL INFORMATION:
-        {str(personal_info) if personal_info else "No additional personal info"}
-        {additional_context_section}
-        INSTRUCTIONS:
-        Write a professional cover letter that:
-        1. Opens with enthusiasm for the specific role and company
-        2. Highlights 2-3 most relevant qualifications/experiences FROM THE RESUME ONLY
-        3. Shows understanding of the company's needs
-        4. Uses specific projects, skills, and achievements mentioned in the resume
-        5. Closes with a strong call to action
-        
-        CRITICAL: Do NOT invent any experience, projects, or achievements. Only use what's explicitly stated in the resume above.
-        
-        Format as clean markdown with proper structure.
-        """
+        prompt = f"""Write a compelling cover letter for this job posting using ONLY the candidate's real experience from their resume.
+
+JOB POSTING:
+{context_info}
+
+CANDIDATE'S ACTUAL RESUME CONTENT:
+{resume_content[:3500] if resume_content else "No resume provided"}
+
+PERSONAL INFORMATION:
+{str(personal_info) if personal_info else "No additional personal info"}
+{additional_context_section}
+
+INSTRUCTIONS:
+Write a professional cover letter that:
+1. Opens with enthusiasm for the specific role and company
+2. Highlights 2-3 most relevant qualifications/experiences FROM THE RESUME ONLY
+3. Shows understanding of the company's needs
+4. Uses specific projects, skills, and achievements mentioned in the resume
+5. Closes with a strong call to action
+
+CRITICAL: Do NOT invent any experience, projects, or achievements. Only use what's explicitly stated in the resume above.
+
+Format as clean markdown with proper structure."""
         
         response = self._generate_with_retry(
             model=self.default_model,
@@ -665,40 +783,61 @@ SCORING GUIDELINES:
 
 Be honest and realistic. Provide specific examples from the resume to support your assessment."""
 
+        # Optimize system prompt if enabled
+        if self.optimize_tokens and self.token_optimizer:
+            system_prompt = self.token_optimizer.optimize_system_prompts(system_prompt)
+        
+        # Optimize content if token optimization is enabled
+        if self.optimize_tokens and self.token_optimizer:
+            # Condense job posting
+            optimized_job = self.token_optimizer.condense_job_posting(
+                job_posting, max_tokens=self.config.token_optimization.max_fit_assessment_tokens
+            )
+            job_content = optimized_job.optimized_text
+            
+            # Limit resume content
+            resume_summary = resume_content[:4000] if resume_content else "No resume provided"
+            cover_letter_summary = cover_letter[:1000] if cover_letter else "No cover letter provided"
+        else:
+            job_content = f"""Title: {job_posting.title}
+Company: {job_posting.company}
+Location: {job_posting.location}
+
+Job Description:
+{job_posting.description}
+
+Required Skills: {', '.join(job_posting.skills)}
+Key Requirements: {'; '.join(job_posting.requirements)}"""
+            
+            resume_summary = resume_content
+            cover_letter_summary = cover_letter
+
         prompt = f"""Please provide a comprehensive fit assessment for this candidate and job posting:
 
-    JOB POSTING DETAILS:
-    ===================
-    Title: {job_posting.title}
-    Company: {job_posting.company}
-    Location: {job_posting.location}
+JOB POSTING DETAILS:
+===================
+{job_content}
 
-    Job Description:
-    {job_posting.description}
+CANDIDATE MATERIALS:
+===================
+RESUME:
+{resume_summary}
 
-    Required Skills: {', '.join(job_posting.skills)}
-    Key Requirements: {'; '.join(job_posting.requirements)}
+{f"COVER LETTER: {cover_letter_summary}" if cover_letter_summary != "No cover letter provided" else "No cover letter provided."}
 
-    CANDIDATE MATERIALS:
-    ===================
-    RESUME:
-    {resume_content}
+CRITICAL INSTRUCTIONS:
+======================
+1. NEVER INVENT, FABRICATE, OR ASSUME EXPERIENCE THAT IS NOT EXPLICITLY STATED IN THE RESUME
+2. ONLY assess based on what is actually written in the candidate's materials
+3. If information is missing or unclear, note it as a weakness or missing skill
+4. Do NOT fill in gaps with assumptions about the candidate's abilities
+5. Be honest about any experience gaps - this helps the candidate understand what they need to improve
 
-    {f"COVER LETTER:{cover_letter}" if cover_letter else "No cover letter provided."}
+ASSESSMENT REQUIREMENTS:
+========================
+You MUST respond with valid JSON only. Do not include any text before or after the JSON. Base your assessment ONLY on the actual content provided in the resume and cover letter. Here is the exact format you should use with a illustrative example:
 
-    CRITICAL INSTRUCTIONS:
-    ======================
-    1. NEVER INVENT, FABRICATE, OR ASSUME EXPERIENCE THAT IS NOT EXPLICITLY STATED IN THE RESUME
-    2. ONLY assess based on what is actually written in the candidate's materials
-    3. If information is missing or unclear, note it as a weakness or missing skill
-    4. Do NOT fill in gaps with assumptions about the candidate's abilities
-    5. Be honest about any experience gaps - this helps the candidate understand what they need to improve
-
-    ASSESSMENT REQUIREMENTS:
-    ========================
-    You MUST respond with valid JSON only. Do not include any text before or after the JSON. Base your assessment ONLY on the actual content provided in the resume and cover letter. Here is the exact format:
-
-    {{
+{{
         "fit_score": 82,
         "score_breakdown": {{
         "technical_skills": 90,
@@ -733,7 +872,7 @@ Be honest and realistic. Provide specific examples from the resume to support yo
 
     REMINDER: The above JSON is just an EXAMPLE FORMAT. Your actual response must evaluate the real candidate based ONLY on their actual resume content. Do not copy the example assessment - create a genuine assessment based on what's actually in the provided resume."""
 
-        # Use Llama 3.2 for better token handling and more detailed analysis
+        # Use GPT-OSS 20B for better token handling and more detailed analysis
         response = self._generate_with_retry(
             model="llama3.2:3b",  # Changed to Llama 3.2 for better token capacity
             prompt=prompt,

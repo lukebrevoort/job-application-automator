@@ -312,7 +312,13 @@ class LaTeXResumeProcessor:
         """Extract key experience areas to focus on from job description."""
         focus_areas = []
         
-        description_lower = job_description.lower()
+        # Handle both string and list inputs from token optimization
+        if isinstance(job_description, list):
+            description_text = ' '.join(job_description)
+        else:
+            description_text = job_description
+        
+        description_lower = description_text.lower()
         
         # Look for key focus patterns
         focus_patterns = {
@@ -333,8 +339,7 @@ class LaTeXResumeProcessor:
     
     def _prioritize_projects(self, job_posting: JobPosting, projects: List[str]) -> List[str]:
         """Prioritize projects based on relevance to job posting."""
-        job_text = (job_posting.description + ' ' + ' '.join(job_posting.skills)).lower()
-        
+        job_text = (str(job_posting.description) + ' ' + ' '.join(job_posting.skills)).lower()        
         project_scores = {}
         for project in projects:
             score = 0
